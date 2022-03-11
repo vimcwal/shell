@@ -1,0 +1,121 @@
+#!/bin/bash
+#myql中的锁等待情况以及锁源被锁语句
+
+#----------------------------#
+#用作查询数据库相关数据的脚本#
+#			by -lishengyu	 #
+#----------------------------#
+
+
+red="\e[1;33m"
+greed="\e[1;32m"
+end="\e[0m"
+port="3306"
+addr="localhost"
+help() {
+echo -e "${greed}Usage: -u 用户名 -p密码${end} -P 端口（默认为3306）-h 地址" && exit
+}
+
+[ $# -eq 0 ] && help && exit
+
+
+while :
+do
+test1=$1
+	if [ "$1" = "-u" ];then
+		user=$2
+		shift 2
+	elif [ "`echo ${test1:0:2}`" = "-p" ];then
+		test=$1
+		if [ ${#test} -gt 2  ];then
+			pass=`echo ${test#*p}`
+			shift 
+		else
+			read -s -p "请输入你的密码:" pas
+			echo -e "\n"
+			pass=$pas
+			shift
+		fi
+	elif [ "$1" = "-P" ];then
+		port=$2
+			shift 2
+	elif [ "$1" = "-h" ];then
+		addr=$2
+			shift 2
+	elif [ "$1" = "-h" ];then
+		help
+		exit
+#	elif [ $# -lt 3 ];then
+#		help && exit
+	else 
+		if [ -z "$user" -a -z "$pass" ];then
+		echo -e "输入有误！"
+		exit
+		else 
+			break
+		fi
+	fi
+done
+
+sql="/usr/bin/mysql -u $user -p$pass -P $port -h $addr -e"
+
+mean() {
+	cat <<-EOF
++-----------------------------------+
++ 1. 查看数据库锁等待情况	        +
++ 2. 查看所有数据库每个表的大小     +
++ 3. 备份指定库和指定表             +
++									+
++-----------------------------------+
+	EOF
+}
+
+
+
+
+
+mysql_lock() {
+	result=`/usr/bin/mysql -u $user -p$pass -P $port -h $addr -e "SHOW STATUS LIKE 'Innodb_row_lock_current_waits';" | grep "Innodb_row_lock_current_waits" | awk '{print $2}'`
+
+	if [ "$result" -eq 0 ];then
+		echo -e "当前没有锁等待"
+		exit
+	fi
+	s_table=`$sql "SELECT * FROM sys.innodb_lock_waits\G"| grep "locked_table" | awk  '{print $2}'`
+
+	b_pid=`$sql "SELECT blocking_pid FROM sys.innodb_lock_waits\G" | awk 'NR>1{print $2}'`
+
+
+	t_pid=`$sql "SELECT thread_id FROM performance_schema.threads WHERE processlist_id=${b_pid}" | awk 'NR>1'`
+	echo "++++++++++++++++++++++++++++++历史语句++++++++++++++++++++++++++++++++++++++"
+	echo -e "被锁的表为：$s_table"
+	echo -e ""
+	$sql "SELECT thread_id,event_name,lock_time,sql_text  FROM performance_schema.events_statements_history WHERE thread_id=${t_pid}"
+	echo -e ""
+	echo "++++++++++++++++++++++++++++++当前语句++++++++++++++++++++++++++++++++++++++"
+	echo -e ""
+	$sql "SELECT thread_id,event_name,lock_time,sql_text  FROM performance_schema.events_statements_current WHERE thread_id=${t_pid}"
+
+}
+
+schema_echo() {
+
+	local cdt="SELECT CONCAT(table_schema,'.',table_name) AS 'Table Name', CONCAT(ROUND(table_rows/1000000,4),'M') AS 'Number of Rows',\
+	CONCAT(ROUND(data_length/(1024*1024*1024),4),'G') AS 'Data Size',CONCAT(ROUND(index_length/(1024*1024*1024),4),'G') AS 'Index Size', \
+	CONCAT(ROUND((data_length+index_length)/(1024*1024*1024),4),'G') AS'Total'FROM information_schema.TABLES  ORDER BY \
+	--total DESC limit 20;"
+	$sql $cdt
+
+}
+mean
+read -p "请输入序号：" $input_num
+case input_num in 
+do
+	1)
+		mysql_lock ;;
+	2)
+		schema_echo;;
+	3)
+esac
+
+
