@@ -9,3 +9,7 @@ shell脚本集合
   
   #获取mysql锁等待语句脚本、表库大小脚本
   - get_mysql_info
+
+
+ #基于二进制k8s进行安装，集群版本为 v1.23 
+   - install-k8s.sh
